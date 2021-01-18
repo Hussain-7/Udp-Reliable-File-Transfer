@@ -1,7 +1,7 @@
+all: Sender Reciever
 
-.PHONY: all clean
+Sender:
+	gcc -Wall -Werror -g -o Sender server.c
 
-all clean:
-	for dir in $(SUBDIRS); do \
-		$(MAKE) -C $$dir -f Makefile $@; \
-	done
+Reciever:
+	gcc -Wall -Werror -g -o Reciever client.c
