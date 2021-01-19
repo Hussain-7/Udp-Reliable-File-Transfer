@@ -140,15 +140,11 @@ int main(int argc, char **argv)
 
 			if (access(flname_recv, F_OK) == 0) {			//Check if file exist
 				
-				int total_frame = 0, resend_frame = 0, drop_frame = 0, t_out_flag = 0;
+				int total_frame = 0, resend_frame = 0, drop_frame = 0;
 				long int i = 0;
 					
 				stat(flname_recv, &st);
 				f_size = st.st_size;			//Size of the file
-
-				t_out.tv_sec = 2;			
-				t_out.tv_usec = 0;
-				setsockopt(sfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval));   //Set timeout option for recvfrom
 
 				fptr = fopen(flname_recv, "rb");        //open the file to be sent
 					
@@ -171,12 +167,6 @@ int main(int argc, char **argv)
 					recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);
 
 					resend_frame++;
-
-					/*Enable timeout flag even if it fails after 20 tries*/
-					if (resend_frame == 20) {
-						t_out_flag = 1;
-						break;
-					}
 				}
 
 				/*transmit data frames sequentially followed by an acknowledgement matching*/
@@ -201,21 +191,10 @@ int main(int argc, char **argv)
 
 						printf("frame ---> %ld	dropped, %d times\n", frame.ID, drop_frame);
 
-						/*Enable the timeout flag even if it fails after 200 tries*/
-						if (resend_frame == 200) {
-							t_out_flag = 1;
-							break;
-						}
 					}
 
 					resend_frame = 0;
 					drop_frame = 0;
-
-					/*File transfer fails if timeout occurs*/
-					if (t_out_flag == 1) {
-						printf("File not sent\n");
-						break;
-					}
 
 					printf("frame ----> %ld	Ack ----> %ld \n", i, ack_num);
 
@@ -223,10 +202,6 @@ int main(int argc, char **argv)
 						printf("File sent\n");
 				}
 				fclose(fptr);
-
-				t_out.tv_sec = 0;
-				t_out.tv_usec = 0;
-				setsockopt(sfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval)); //Disable the timeout option
 			}
 			else {	
 				printf("Invalid Filename\n");

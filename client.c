@@ -16,7 +16,7 @@
 #include <sys/time.h>
 
 
-#define BUF_SIZE 2048	//Max buffer size of the data in a frame
+#define BUF_SIZE 512	//Max buffer size of the data in a frame
 
 /*A frame packet with unique id, length and data*/
 struct frame_t {
@@ -54,7 +54,6 @@ int main(int argc, char **argv)
 	struct sockaddr_in send_addr, from_addr;
 	struct stat st;
 	struct frame_t frame;
-	struct timeval t_out = {0, 0};
 
 	char cmd_send[50];
 	char flname[20];
@@ -65,7 +64,8 @@ int main(int argc, char **argv)
 	ssize_t length = 0;
 	off_t f_size = 0;
 	long int ack_num = 0;
-	int cfd, ack_recv = 0;
+	int cfd;
+	int ack_recv = 0;
 
 	FILE *fptr;
 
@@ -111,14 +111,8 @@ int main(int argc, char **argv)
 			long int total_frame = 0;
 			long int bytes_rec = 0, i = 0;
 
-			t_out.tv_sec = 2;
-			setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval)); 	//Enable the timeout option if client does not respond
-
 			recvfrom(cfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length); //Get the total number of frame to recieve
 
-			t_out.tv_sec = 0;
-                	setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval)); 	//Disable the timeout option
-			
 			if (total_frame > 0) {
 				sendto(cfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));
 				printf("----> %ld\n", total_frame);
@@ -159,16 +153,12 @@ int main(int argc, char **argv)
 		else if ((strcmp(cmd, "put") == 0) && (flname[0] != '\0')) {
 			
 			if (access(flname, F_OK) == 0) {	//Check if file exist
-				int total_frame = 0, resend_frame = 0, drop_frame = 0, t_out_flag = 0;
+				int total_frame = 0, resend_frame = 0, drop_frame = 0;
 				long int i = 0;
 
 				stat(flname, &st);
 				f_size = st.st_size;	//Size of the file
-				
-				t_out.tv_sec = 2;
-				t_out.tv_usec = 0;
-				setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval)); //Set timeout option for recvfrom
-
+		
 				fptr = fopen(flname, "rb");	//Open the file to be sent
 
 				if ((f_size % BUF_SIZE) != 0)
@@ -192,11 +182,6 @@ int main(int argc, char **argv)
 					
 					resend_frame++;
 
-					/*Enable timeout flag after 20 tries*/
-					if (resend_frame == 20) {
-						t_out_flag = 1;
-						break;
-					}
 				}
 
 				/*transmit data frames sequentially followed by an acknowledgement matching*/
@@ -218,20 +203,10 @@ int main(int argc, char **argv)
 						printf("frame ---> %ld	dropped, %d times\n", frame.ID, ++drop_frame);
 						resend_frame++;
 
-						/*Enable timeout flag after 200 tries*/
-						if (resend_frame == 200) {
-							t_out_flag = 1;
-							break;
-						}
 					}
 					drop_frame = 0;
 					resend_frame = 0;
 
-					/*File transfer fails if timeout occurs*/
-					if (t_out_flag == 1) {
-						printf("File not sent\n");
-						break;
-					}
 
 					printf("frame ----> %ld	Ack ----> %ld\n", i, ack_num);
 
@@ -239,10 +214,6 @@ int main(int argc, char **argv)
 						printf("File sent\n");
 				}
 				fclose(fptr);
-				
-				printf("Disable the timeout\n");
-				t_out.tv_sec = 0;
-				setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval)); //Disable timeout
 			}
 		}
 
