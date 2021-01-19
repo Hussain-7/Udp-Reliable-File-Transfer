@@ -54,12 +54,11 @@ IMPLEMENTATION SUMMARY
 			2.) Then it checks if the specified file is present and have appropriate read 
 			    permission. If the file is not present or does not have appropriate 
 			    permission, then server does not send anything back to the client
-			3.) If the specified file is valid, then it sets a timeout of 2 seconds for 
-			    the recieve call on the server socket
+			3.) If the specified file is valid,
 			4.) After this it opens the specified file, gets the file size and calculates 
 			    the number of frames required to send the file
 			5.) First it sends the total number of frames and then checks if the recieved 
-			    acknowledegement matches to the total number of frames
+			    acknowledegement matches to the total number of frames.
 			6.) Finally it sends all the frames sequentially and check the recieved ack. If 
 			    ack does not match then it keeps resending the frames till the ack matches
 

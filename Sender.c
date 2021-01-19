@@ -19,11 +19,12 @@
 #include <sys/dir.h>
 
 
-#define BUF_SIZE (2048)		//Max buffer size of the data in a frame
+#define BUF_SIZE (500)		//Max buffer size of the data in a frame
+#define WIN_SIZE  (5)      //Window Size
 
 /*A frame packet with unique id, length and data*/
-struct frame_t {
-	long int ID;
+struct Packet {
+	long int seqno;
 	long int length;
 	char data[BUF_SIZE];
 };
@@ -87,12 +88,14 @@ int main(int argc, char **argv)
 
 	struct sockaddr_in sv_addr, cl_addr;
 	struct stat st;
-	struct frame_t frame;
-	struct timeval t_out = {0, 0};
+	struct Packet packets[WIN_SIZE];
+    // struct Packet ack_packets[WIN_SIZE];
+	// struct timeval t_out = {0, 0};
 
 	char msg_recv[BUF_SIZE];
 	char flname_recv[20];         
 	char cmd_recv[10];
+    
 
 	ssize_t numRead;
 	ssize_t length;
@@ -100,7 +103,7 @@ int main(int argc, char **argv)
 	long int ack_num = 0;    //Recieve frame acknowledgement
 	int ack_send = 0;
 	int sfd;
-
+    int ack_number[WIN_SIZE+1];
 	FILE *fptr;
 
 	/*Clear the server structure - 'sv_addr' and populate it with port and IP address*/
@@ -140,8 +143,10 @@ int main(int argc, char **argv)
 
 			if (access(flname_recv, F_OK) == 0) {			//Check if file exist
 				
-				int total_frame = 0, resend_frame = 0, drop_frame = 0;
-				long int i = 0;
+				int total_frame = 0;
+                int resend_frame = 0;
+                // int drop_frame = 0;
+				// long int i = 0;
 					
 				stat(flname_recv, &st);
 				f_size = st.st_size;			//Size of the file
@@ -170,92 +175,100 @@ int main(int argc, char **argv)
 				}
 
 				/*transmit data frames sequentially followed by an acknowledgement matching*/
-				for (i = 1; i <= total_frame; i++)
-				{
-					memset(&frame, 0, sizeof(frame));
-					ack_num = 0;
-					frame.ID = i;
-					frame.length = fread(frame.data, 1, BUF_SIZE, fptr);
+                long int packetno=1;
+                int window_size=WIN_SIZE;
+                while(packetno <= total_frame)
+                {
+                    for (int j = 1; j <= window_size; j++)
+				    {
+                        memset(&packets[j], 0, sizeof(packets[j]));
+                        ack_number[j-1] = 0;
+                        packets[j].seqno = packetno;
+                        packets[j].length = fread(packets[j].data, 1, BUF_SIZE, fptr);
+                        if(packets[j].length<=0)
+                        {
+                            window_size=j-1;
+                            break;
+                        }
+                        packetno++;
+                    }
 
-					sendto(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));		//send the frame
-					recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);	//Recieve the acknowledgement
 
-					while (ack_num != frame.ID)  //Check for ack
+                   RESEND: 
+                    // Loop for sending packets in the buffer array
+		        	for (int j = 1; j <= window_size; j++)
 					{
-						/*keep retrying until the ack matches*/
-						sendto(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));
-						recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);
-						printf("frame ---> %ld	dropped, %d times\n", frame.ID, ++drop_frame);
+		                // Checking if ack for that packet is received or not
+		                if (ack_number[j-1] == 0)
+						{
+		                    printf("Sending packet --> %ld\n", packets[j].seqno);
+		                    sendto(sfd, &packets[j], sizeof(struct Packet), 0,(struct sockaddr *) &cl_addr, sizeof(cl_addr));
+		                }
+		          	}
+
+                    for (int j = 1; j <= window_size; j++)
+					{
+		                recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);
+                        
+                        if(length>0&&ack_num>0 && ack_num <= total_frame)
+                        {
+                            ack_number[(ack_num-1)%WIN_SIZE]= 1;
+                            printf("Ack for packet -> %ld\n", ack_num);
+                        }
+                        else
+                        {
+                            printf("<------------Resending a packet-------------->\n");
+                            goto RESEND;
+                        }
+                        ack_num=0;
+
+		          	}
+
+                     // Zeroing array of Acks
+	                 memset(ack_number, 0, sizeof(ack_number));
+
+	                 // Zeroing array of packets
+	                 memset(packets, 0, sizeof(packets));
+                }
+                printf("File sent\n");
+				// for (i = 1; i <= total_frame; i++)
+				// {
+				// 	memset(&frame, 0, sizeof(frame));
+				// 	ack_num = 0;
+				// 	frame.seqno = i;
+				// 	frame.length = fread(frame.data, 1, BUF_SIZE, fptr);
+
+				// 	sendto(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));		//send the frame
+				// 	recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);	//Recieve the acknowledgement
+                    
+
+				// 	while (ack_num != frame.seqno)  //Check for ack
+				// 	{
+				// 		/*keep retrying until the ack matches*/
+				// 		sendto(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));
+				// 		recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);
+				// 		printf("frame ---> %ld	dropped, %d times\n", frame.seqno, ++drop_frame);
 						
-						resend_frame++;
+				// 		resend_frame++;
 
-						printf("frame ---> %ld	dropped, %d times\n", frame.ID, drop_frame);
+				// 		printf("frame ---> %ld	dropped, %d times\n", frame.seqno, drop_frame);
 
-					}
+				// 	}
 
-					resend_frame = 0;
-					drop_frame = 0;
+				// 	resend_frame = 0;
+				// 	drop_frame = 0;
 
-					printf("frame ----> %ld	Ack ----> %ld \n", i, ack_num);
+				// 	printf("frame ----> %ld	Ack ----> %ld \n", i, ack_num);
 
-					if (total_frame == ack_num)
-						printf("File sent\n");
-				}
+				// 	if (total_frame == ack_num)
+				// 		printf("File sent\n");
+				// }
+
+
 				fclose(fptr);
 			}
 			else {	
 				printf("Invalid Filename\n");
-			}
-		}
-
-/*----------------------------------------------------------------------"put case"-------------------------------------------------------------------------*/
-
-		else if ((strcmp(cmd_recv, "put") == 0) && (flname_recv[0] != '\0')) {
-
-			printf("Server: Put called with file name --> %s\n", flname_recv);
-
-			long int total_frame = 0, bytes_rec = 0, i = 0;
-			
-			t_out.tv_sec = 2;
-			setsockopt(sfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval));   //Enable the timeout option if client does not respond
-
-			recvfrom(sfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);  //Get the total number of frame to recieve
-			
-			t_out.tv_sec = 0;
-			setsockopt(sfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t_out, sizeof(struct timeval)); //Disable the timeout option
-			
-			if (total_frame > 0) {
-				sendto(sfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));
-				printf("Total frame ---> %ld\n", total_frame);
-	
-				fptr = fopen(flname_recv, "wb");	//open the file in write mode
-
-				/*Recieve all the frames and send the acknowledgement sequentially*/
-				for (i = 1; i <= total_frame; i++)
-				{
-					memset(&frame, 0, sizeof(frame));
-
-					recvfrom(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);  //Recieve the frame
-				       	sendto(sfd, &(frame.ID), sizeof(frame.ID), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));    //Send the ack
-
-					/*Drop the repeated frame*/
-					if ((frame.ID < i) || (frame.ID > i)) {
-						i--;
-					}
-					else {
-						fwrite(frame.data, 1, frame.length, fptr);   /*Write the recieved data to the file*/
-						printf("frame.ID ----> %ld	frame.length ----> %ld\n", frame.ID, frame.length);
-						bytes_rec += frame.length;   
-					}
-					
-					if (i == total_frame)
-						printf("File recieved\n");
-				}
-			       printf("Total bytes recieved ---> %ld\n", bytes_rec);
-			       fclose(fptr);
-			}
-			else {
-				printf("File is empty\n");
 			}
 		}
 

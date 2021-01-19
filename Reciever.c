@@ -16,11 +16,12 @@
 #include <sys/time.h>
 
 
-#define BUF_SIZE 512	//Max buffer size of the data in a frame
+#define BUF_SIZE 500	//Max buffer size of the data in a packet
+#define WIN_SIZE 5	//Window size
 
-/*A frame packet with unique id, length and data*/
-struct frame_t {
-	long int ID;
+/*A packet with unique id, length and data*/
+struct Packet {
+	long int seqno;
 	long int length;
 	char data[BUF_SIZE];
 };
@@ -52,8 +53,9 @@ int main(int argc, char **argv)
 	}
 
 	struct sockaddr_in send_addr, from_addr;
-	struct stat st;
-	struct frame_t frame;
+	// struct stat st;
+	struct Packet packets[WIN_SIZE+1];
+	struct Packet packet;
 
 	char cmd_send[50];
 	char flname[20];
@@ -62,8 +64,8 @@ int main(int argc, char **argv)
 	
 	ssize_t numRead = 0;
 	ssize_t length = 0;
-	off_t f_size = 0;
-	long int ack_num = 0;
+	// off_t f_size = 0;
+	// long int ack_num = 0;
 	int cfd;
 	int ack_recv = 0;
 
@@ -88,7 +90,7 @@ int main(int argc, char **argv)
 		memset(cmd, 0, sizeof(cmd));
 		memset(flname, 0, sizeof(flname));
 
-		printf("\n Menu \n Enter any of the following commands \n 1.) get [file_name] \n 2.) put [file_name] \n 3.) delete [file_name] \n 4.) ls \n 5.) exit \n");		
+		printf("\n<---- Menu ----->\n Enter any of the following commands \n 1.) get [file_name] \n 2.) delete [file_name] \n 3.) ls \n 5.) exit \nEnter Command : ");		
 		scanf(" %[^\n]%*c", cmd_send);
 
 		//printf("----> %s\n", cmd_send);
@@ -107,9 +109,8 @@ int main(int argc, char **argv)
 /*----------------------------------------------------------------------"get case"-------------------------------------------------------------------------*/
 
 		if ((strcmp(cmd, "get") == 0) && (flname[0] != '\0' )) {
-
 			long int total_frame = 0;
-			long int bytes_rec = 0, i = 0;
+			long int bytes_rec = 0, packetno = 1;
 
 			recvfrom(cfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length); //Get the total number of frame to recieve
 
@@ -118,102 +119,78 @@ int main(int argc, char **argv)
 				printf("----> %ld\n", total_frame);
 				
 				fptr = fopen(flname, "wb");	//open the file in write mode
-
+                memset(&packets, 0, sizeof(packets));
 				/*Recieve all the frames and send the acknowledgement sequentially*/
-				for (i = 1; i <= total_frame; i++)
+                int window_size=WIN_SIZE;
+				while(packetno <= total_frame)
 				{
-					memset(&frame, 0, sizeof(frame));
+                    REACK:
+                    for (int i = 0; i < window_size; i++)
+					{
+                      
+                        memset(&packet, 0, sizeof(packet));
+                        if(packetno<=total_frame)
+                        {
 
-					recvfrom(cfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length);  //Recieve the frame
-					sendto(cfd, &(frame.ID), sizeof(frame.ID), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));	//Send the ack
-
-					/*Drop the repeated frame*/
-					if ((frame.ID < i) || (frame.ID > i))
-						i--;
-					else {
-						fwrite(frame.data, 1, frame.length, fptr);   /*Write the recieved data to the file*/
-						printf("frame.ID ---> %ld	frame.length ---> %ld\n", frame.ID, frame.length);
-						bytes_rec += frame.length;
+                            recvfrom(cfd, &(packet), sizeof(packet), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length);
+                            if (length > 0)
+                            {
+                                packets[(packet.seqno - 1) % WIN_SIZE] =packet;
+                                packetno++;
+                            }
+                        }
+                        else
+                        {
+                            window_size=i;
+                            break;
+                        }
 					}
+                    int nAcks=0;  
+                    int sentSize=0;
+                    for (int i = 0; i < window_size; i++)
+					{ 
 
-					if (i == total_frame) {
-						printf("File recieved\n");
-					}
+						sentSize = sendto(cfd, &(packets[i].seqno), sizeof(packets[i].seqno), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));
+				         if (sentSize > 0)
+						 {
+                            nAcks++;
+                            printf("Ack for packet %ld sent\n", packets[i].seqno);
+						 }
+                         memset(&packet, 0, sizeof(packet));
+					}          
+
+				    if (nAcks < window_size)
+					{
+                        printf("In reac");
+                        packetno-=window_size;
+			        	goto REACK;
+			        }
+                    
+                    for (int i = 0; i < window_size; i++)
+					{
+                        if(packets[i].length!=0)
+                        {
+                            fwrite(packets[i].data, 1, packets[i].length, fptr); /*Write the recieved data to the file*/
+                            printf("packet.seqno ---> %ld	packet.length ---> %ld\n", packets[i].seqno, packets[i].length);
+                            bytes_rec += packets[i].length;
+                        }
+					}          
+
 				}
+                packetno=packetno-1;
+                if (packetno == total_frame) {
+					printf("Complete File recieved\n");
+				}
+                else
+                {
+                    printf("\npacketno : %ld",packetno);
+                    printf("Incomplete File recieved\n");
+                }
 				printf("Total bytes recieved ---> %ld\n", bytes_rec);
 				fclose(fptr);
 			}
 			else {
 				printf("File is empty\n");
-			}
-		}
-
-/*------------------------------------------------------------------"put case"---------------------------------------------------------------------------*/
-
-		else if ((strcmp(cmd, "put") == 0) && (flname[0] != '\0')) {
-			
-			if (access(flname, F_OK) == 0) {	//Check if file exist
-				int total_frame = 0, resend_frame = 0, drop_frame = 0;
-				long int i = 0;
-
-				stat(flname, &st);
-				f_size = st.st_size;	//Size of the file
-		
-				fptr = fopen(flname, "rb");	//Open the file to be sent
-
-				if ((f_size % BUF_SIZE) != 0)
-					total_frame = (f_size / BUF_SIZE) + 1;	//Total number of frames to be sent
-				else
-					total_frame = (f_size / BUF_SIZE);
-
-				printf("Total number of packets ---> %d	File size --> %ld\n", total_frame, f_size);
-
-				sendto(cfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));		//Send the number of packets (to be transmitted) to reciever
-				recvfrom(cfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length);
-
-				printf("Ack num ---> %ld\n", ack_num);
-
-				//check for Ack
-				while (ack_num != total_frame)
-				{
-					/*Keep retrying until ack match*/
-					sendto(cfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));
-					recvfrom(cfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length); 
-					
-					resend_frame++;
-
-				}
-
-				/*transmit data frames sequentially followed by an acknowledgement matching*/
-				for (i = 1; i <= total_frame; i++)
-				{
-					memset(&frame, 0, sizeof(frame));
-					ack_num = 0;
-					frame.ID = i;
-					frame.length = fread(frame.data, 1, BUF_SIZE, fptr);
-
-					sendto(cfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));  //send the frame
-                                        recvfrom(cfd, &(ack_num), sizeof(ack_num), 1, (struct sockaddr *) &from_addr, (socklen_t *) &length);	//Recieve the acknowledgement
-
-					/*Check for the ack match*/
-					while (ack_num != frame.ID)
-					{
-						sendto(cfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));
-						recvfrom(cfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &from_addr, (socklen_t *) &length);
-						printf("frame ---> %ld	dropped, %d times\n", frame.ID, ++drop_frame);
-						resend_frame++;
-
-					}
-					drop_frame = 0;
-					resend_frame = 0;
-
-
-					printf("frame ----> %ld	Ack ----> %ld\n", i, ack_num);
-
-					if (total_frame == ack_num)
-						printf("File sent\n");
-				}
-				fclose(fptr);
 			}
 		}
 
