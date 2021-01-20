@@ -53,7 +53,6 @@ int main(int argc, char **argv)
 	}
 
 	struct sockaddr_in send_addr, from_addr;
-	// struct stat st;
 	struct Packet packets[WIN_SIZE+1];
 	struct Packet packet;
 
@@ -64,8 +63,6 @@ int main(int argc, char **argv)
 	
 	ssize_t numRead = 0;
 	ssize_t length = 0;
-	// off_t f_size = 0;
-	// long int ack_num = 0;
 	int cfd;
 	int ack_recv = 0;
 
@@ -92,8 +89,6 @@ int main(int argc, char **argv)
 
 		printf("\n<---- Menu ----->\n Enter any of the following commands \n 1.) get [file_name] \n 2.) delete [file_name] \n 3.) ls \n 5.) exit \nEnter Command : ");		
 		scanf(" %[^\n]%*c", cmd_send);
-
-		//printf("----> %s\n", cmd_send);
 		
 		sscanf(cmd_send, "%s %s", cmd, flname);		//parse the user input into command and filename
 
@@ -122,9 +117,12 @@ int main(int argc, char **argv)
                 memset(&packets, 0, sizeof(packets));
 				/*Recieve all the frames and send the acknowledgement sequentially*/
                 int window_size=WIN_SIZE;
+				int succrecv=0;
+				int nAcks=0;
+				int window_size2=0;
 				while(packetno <= total_frame)
 				{
-                    REACK:
+                    RERECIEVE:
                     for (int i = 0; i < window_size; i++)
 					{
                       
@@ -136,8 +134,10 @@ int main(int argc, char **argv)
                             if (length > 0)
                             {
                                 packets[(packet.seqno - 1) % WIN_SIZE] =packet;
+								succrecv++;
                                 packetno++;
                             }
+
                         }
                         else
                         {
@@ -145,26 +145,37 @@ int main(int argc, char **argv)
                             break;
                         }
 					}
-                    int nAcks=0;  
+                      
                     int sentSize=0;
                     for (int i = 0; i < window_size; i++)
 					{ 
 
-						sentSize = sendto(cfd, &(packets[i].seqno), sizeof(packets[i].seqno), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));
-				         if (sentSize > 0)
-						 {
+						if(packets[i].seqno>0)
+						{
+						 	sentSize = sendto(cfd, &(packets[i].seqno), sizeof(packets[i].seqno), 0, (struct sockaddr *) &send_addr, sizeof(send_addr));
+				         	if (sentSize > 0)
+						 	{
                             nAcks++;
                             printf("Ack for packet %ld sent\n", packets[i].seqno);
-						 }
+						 	}
+						}
+					
                          memset(&packet, 0, sizeof(packet));
 					}          
-
-				    if (nAcks < window_size)
+					
+				   	if (nAcks < window_size)
 					{
-                        printf("In reac");
-                        packetno-=window_size;
-			        	goto REACK;
+						window_size2=window_size;
+                        window_size=window_size-nAcks;
+			        	goto RERECIEVE;
 			        }
+					else{
+
+						if(window_size2!=0)
+					 	window_size=window_size2;
+					}
+					nAcks=0;
+					succrecv=0;
                     
                     for (int i = 0; i < window_size; i++)
 					{
@@ -175,7 +186,6 @@ int main(int argc, char **argv)
                             bytes_rec += packets[i].length;
                         }
 					}          
-
 				}
                 packetno=packetno-1;
                 if (packetno == total_frame) {

@@ -1,4 +1,3 @@
-
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -41,10 +40,22 @@ ls
 *	@\return	On success this function returns 0 and On failure this function returns -1
 *
 */
+
+// struct dirent {
+//     ino_t          d_ino;       /* inode number */
+//     off_t          d_off;       /* offset to the next dirent */
+//     unsigned short d_reclen;    /* length of this record */
+//     unsigned char  d_type;      /* type of file; not supported
+//                                    by all file system types */
+//     char           d_name[256]; /* filename */ we  only use this
+// };
+
+
+
 int ls(FILE *f) 
 { 	
 	struct dirent **dirent; int n = 0;
-	if ((n = scandir(".", &dirent, NULL, alphasort)) < 0) { 
+	if ((n = scandir(".", &dirent, NULL, alphasort)) < 0) { //upon return from scandir n will be set to no of files in current directory plus two more for the "." and ".." directory entries. 
 		perror("Scanerror"); 
 		return -1; 
 	}
@@ -86,11 +97,16 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	/*	typedef struct sockaddr_in {
+		short          sin_family; The address family for the transport address. This member should always be set to AF_INET. which represents ipv4
+		USHORT         sin_port;  A transport protocol port number.
+		IN_ADDR        sin_addr; An IN_ADDR structure that contains an IPv4 address.Or the ip address
+		CHAR           sin_zero[8]; this is reserved for system we donot use this
+		};
+	*/
 	struct sockaddr_in sv_addr, cl_addr;
-	struct stat st;
+	struct stat st; //it is a type of structure used for storing details about file information
 	struct Packet packets[WIN_SIZE];
-    // struct Packet ack_packets[WIN_SIZE];
-	// struct timeval t_out = {0, 0};
 
 	char msg_recv[BUF_SIZE];
 	char flname_recv[20];         
@@ -98,9 +114,9 @@ int main(int argc, char **argv)
     
 
 	ssize_t numRead;
-	ssize_t length;
-	off_t f_size; 	
-	long int ack_num = 0;    //Recieve frame acknowledgement
+	ssize_t length;// len of bytes recieved
+	off_t f_size; 	//file size
+	long int ack_num = 0;    //Recieve packet acknowledgement
 	int ack_send = 0;
 	int sfd;
     int ack_number[WIN_SIZE+1];
@@ -110,8 +126,20 @@ int main(int argc, char **argv)
 	memset(&sv_addr, 0, sizeof(sv_addr));
 	sv_addr.sin_family = AF_INET;
 	sv_addr.sin_port = htons(atoi(argv[1]));
-	sv_addr.sin_addr.s_addr = INADDR_ANY;
+	sv_addr.sin_addr.s_addr = INADDR_ANY;//Setting it to local host not defining specific ip.If using on different networks set public ip here
 
+	/*
+	socket() has 3 parameters
+	   1)The domain argument specifies a communication domain; this selects  the
+       protocol  family  which will be used for communication.  These families
+       are defined in <sys/socket.h>.we set it to AF_INET - IPv4 Internet protocols
+	   2) Next is the type, which specifies the communication semantics.
+	   we set it to SOCK_DGRAM which represents udp protocol
+	   3)Third is the  protocol which specifies  a  particular  protocol  to  be used with the
+       socket.  Normally only a single protocol exists to support a particular
+       socket  type within a given protocol family, in which case protocol can
+       be specified as 0.
+	*/
 	if ((sfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
 		print_error("Server: socket");
 
@@ -128,9 +156,8 @@ int main(int argc, char **argv)
 		length = sizeof(cl_addr);
 
 		if((numRead = recvfrom(sfd, msg_recv, BUF_SIZE, 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length)) == -1)
-			print_error("Server: recieve");
+		print_error("Server: recieve");
 
-		//print_msg("Server: Recieved %ld bytes from %s\n", numRead, cl_addr.sin_addr.s_addr);
 		printf("Server: The recieved message ---> %s\n", msg_recv);
 
 		sscanf(msg_recv, "%s %s", cmd_recv, flname_recv);
@@ -145,9 +172,10 @@ int main(int argc, char **argv)
 				
 				int total_frame = 0;
                 int resend_frame = 0;
-                // int drop_frame = 0;
-				// long int i = 0;
 					
+				/*
+				stat() function is used to list properties of a file identified by path or filename. 
+				It reads all file properties and dumps to st structure*/
 				stat(flname_recv, &st);
 				f_size = st.st_size;			//Size of the file
 
@@ -170,22 +198,23 @@ int main(int argc, char **argv)
 					/*keep Retrying until the ack matches*/
 					sendto(sfd, &(total_frame), sizeof(total_frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr)); 
 					recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);
-
 					resend_frame++;
 				}
-
-				/*transmit data frames sequentially followed by an acknowledgement matching*/
+				
                 long int packetno=1;
                 int window_size=WIN_SIZE;
+				int noofacks=0;
                 while(packetno <= total_frame)
                 {
+					//Saving the data in packets array.
                     for (int j = 1; j <= window_size; j++)
 				    {
                         memset(&packets[j], 0, sizeof(packets[j]));
                         ack_number[j-1] = 0;
                         packets[j].seqno = packetno;
                         packets[j].length = fread(packets[j].data, 1, BUF_SIZE, fptr);
-                        if(packets[j].length<=0)
+                        //only for last set of packets
+						if(packets[j].length<=0)
                         {
                             window_size=j-1;
                             break;
@@ -195,7 +224,7 @@ int main(int argc, char **argv)
 
 
                    RESEND: 
-                    // Loop for sending packets in the buffer array
+                    // Loop for sending packets in group of 5
 		        	for (int j = 1; j <= window_size; j++)
 					{
 		                // Checking if ack for that packet is received or not
@@ -214,57 +243,28 @@ int main(int argc, char **argv)
                         {
                             ack_number[(ack_num-1)%WIN_SIZE]= 1;
                             printf("Ack for packet -> %ld\n", ack_num);
+							noofacks++;
                         }
                         else
                         {
-                            printf("<------------Resending a packet-------------->\n");
+                            printf("<------------Resending a packet----------->\n");
                             goto RESEND;
                         }
                         ack_num=0;
 
 		          	}
+					
+					if(noofacks<window_size)
+						goto RESEND;
+					
+					noofacks=0;
+                    // Zeroing array of Acks
+	                memset(ack_number, 0, sizeof(ack_number));
 
-                     // Zeroing array of Acks
-	                 memset(ack_number, 0, sizeof(ack_number));
-
-	                 // Zeroing array of packets
-	                 memset(packets, 0, sizeof(packets));
+	                // Zeroing array of packets
+	                memset(packets, 0, sizeof(packets));
                 }
-                printf("File sent\n");
-				// for (i = 1; i <= total_frame; i++)
-				// {
-				// 	memset(&frame, 0, sizeof(frame));
-				// 	ack_num = 0;
-				// 	frame.seqno = i;
-				// 	frame.length = fread(frame.data, 1, BUF_SIZE, fptr);
-
-				// 	sendto(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));		//send the frame
-				// 	recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);	//Recieve the acknowledgement
-                    
-
-				// 	while (ack_num != frame.seqno)  //Check for ack
-				// 	{
-				// 		/*keep retrying until the ack matches*/
-				// 		sendto(sfd, &(frame), sizeof(frame), 0, (struct sockaddr *) &cl_addr, sizeof(cl_addr));
-				// 		recvfrom(sfd, &(ack_num), sizeof(ack_num), 0, (struct sockaddr *) &cl_addr, (socklen_t *) &length);
-				// 		printf("frame ---> %ld	dropped, %d times\n", frame.seqno, ++drop_frame);
-						
-				// 		resend_frame++;
-
-				// 		printf("frame ---> %ld	dropped, %d times\n", frame.seqno, drop_frame);
-
-				// 	}
-
-				// 	resend_frame = 0;
-				// 	drop_frame = 0;
-
-				// 	printf("frame ----> %ld	Ack ----> %ld \n", i, ack_num);
-
-				// 	if (total_frame == ack_num)
-				// 		printf("File sent\n");
-				// }
-
-
+                printf("File sent Successfuly\n");
 				fclose(fptr);
 			}
 			else {	
@@ -333,7 +333,7 @@ int main(int argc, char **argv)
 			printf("Server: Unkown command. Please try again\n");
 		}
 	}
-	
+	printf("\nClosing Socket");
 	close(sfd);
 	exit(EXIT_SUCCESS);
 }
