@@ -51,40 +51,39 @@ IMPLEMENTATION SUMMARY
 			2.) Then it checks if the specified file is present and have appropriate read 
 			    permission. If the file is not present or does not have appropriate 
 			    permission, then server does not send anything back to the client
-			3.) If the specified file is valid,
-			4.) After this it opens the specified file, gets the file size and calculates 
-			    the number of frames required to send the file.
-			5.) First it sends the total number of frames and then checks if the recieved 
+			3.) If the specified file is valid .Then it opens the specified file, gets the file
+			    size and calculates the number of frames required to send the file.
+			4.) First it sends the total number of frames and then checks if the recieved 
 			    acknowledegement matches to the total number of frames.When this is confirmed 
-				it moves to the next stage
-			6.) Finally it sends the 5 packets at a time in sequential order since the window
-				size is set to 5 and then it checks if ack for each packet is recieved.If all 
-				acks recieved it loop to the next 5 packets else since stop and wait is used 
-				unltil all packets in window are successfully recieved we wont move foward hence
-				using selective repeat mechanism we only send the packet whose ack is not recieved.
-				If all 5 acks are recieved only then we move foward check the recieved ack.
-			7.) This procedure ensure Realiablity for sender side
+			    it moves to the next stage
+			5.) Finally it sends the 5 packets at a time in sequential order since the window
+			    size is set to 5 .Then it checks if ack for each packet is recieved.If all 
+			    acks recieved it loops tothe next 5 packets else since stop and wait is followed
+			    we goto send packet loop and loop until all packets in window are successfully 
+			    recieved we wont move foward .Hence using selective repeat mechanism we only send 
+			    those packet whose ack is not recieved.If all 5 acks are recieved only then we move
+			    foward.
+			6.) This procedure ensure Realiablity for sender side
 
 		CLIENT side Implementation
 
 			1.) Server does not transfer any message if the filename is NULL or not present
 			    in the directory
 			2.) if file name exist reciever recieves count of total no packets from the Sender
-			    and checks if valid noofframes only then Reciever sends ack for the total no of packets 
-			3.) Then Reciever recieves 5 packets at a time and check there validity and stores them in 
-				packets array according to the seqno in the packet.this handles the reordering at reciever
-				side. 
-			4.) Next in a similar manner after storing all packet.For each packet an acknowledgement is 
-				sent along with its seqno (which is unique for every packet).Then after the nofacks sent 
-				
-			5.) Discard the duplicate frames.
-			6.) Write the recieved data frame into a file.
-
-	put [filename]		-	This command is used to transfer the specified file into server.
-	==============
-	
-	The implementation is similiar to 'get' request except here the client will initiate the
-	transmission, transfer the file and the server will recieve the file.
+			    and checks if valid count of totalframes recieved only then Reciever sends ack for the 
+			    count of total no of packets recieved.Then we enter a while loop which loops until packetno
+			    is <= totalframes
+			3.) Then in the while we use a for loop to loop through forloop which run windowsize time and  
+			    packets array(size of window_size) and recieve a packets at a time and check there validity 
+			    and stores them in 
+			    packets array according to the seqno in the packet.This also handles the reordering at reciever
+			    side. 
+			4.) Next in a similar manner after storing all packets in packets array.For each packet in packets
+			    array an acknowledgement is sent along with its seqno (which is unique for every packet).Then after
+			    sending acks the nofacks sent is checked and if acks are less then windows size ,using goto label we 
+			    go to the rerecieve label which is above the forloop for recieving packets from sender.
+			5.) If noofacks is equal to windows size then loop through packets array an write data to the newly created
+			    file.Next we loop the same procedure above unless while loops exits
 
 	delete [filename]	-	This command is used to delete the specified file in the server side
 	=================
