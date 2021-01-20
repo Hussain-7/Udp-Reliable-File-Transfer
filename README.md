@@ -15,7 +15,7 @@ BUILD and RUN STEPS
 
 	1.) Go to the project folder, cd [FolderName]/
 	
-	2.) Run make (This command compiles both Sender and Reciever present in a different folder 
+	2.) Run make (This command compiles both Sender and Reciever present in a same folder 
 	    and generates an respective executable)
 
 	RUN STEPS
