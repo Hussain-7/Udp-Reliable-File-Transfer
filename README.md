@@ -1,10 +1,10 @@
 INTRODUCTION
 ------------
-	This project on UDP Socket programming consists of a Reciever and the Sender. The reciever interacts 
-	with the user, gets the user command and sends it to the Sender. The main purpose of the Sender 
-	is to collect the data based on the user's input and send back to the Reciever. In this project, 
-	a reliable connectionless file transmission model is implemented using User Datagram Protocol 
-	(UDP).
+	This project on UDP Socket programming consists of a Reciever and the Sender. The reciever
+	interacts with the user, gets the user command and sends it to the Sender. The main purpose
+	of the Sender is to collect the data based on the user's input and send back to the Reciever.
+	In this project,a reliable connectionless file transmission model is implemented using User 
+	Datagram Protocol(UDP).
 
 BUILD and RUN STEPS
 -------------------
