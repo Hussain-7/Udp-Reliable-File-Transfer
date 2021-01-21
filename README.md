@@ -15,7 +15,7 @@ BUILD and RUN STEPS
 
 	1.) Go to the project folder, cd [FolderName]/
 	
-	2.) Run make (This command compiles both Sender and Reciever present in a different folder 
+	2.) Run make (This command compiles both Sender and Reciever present in the same folder 
 	    and generates an respective executable)
 
 	RUN STEPS
@@ -23,13 +23,13 @@ BUILD and RUN STEPS
 
 	For SERVER module:
 	
-		1.) ./server [PORT]
+		1.) ./Sender [PORT]
 
 		Note:- Use an unreserved port > 5000
 
 	For CLIENT module:
 
-		1.) ./client [IP ADDRESS] [PORT]
+		1.) ./Reciever [IP ADDRESS] [PORT]
 
 		Note:- Use the address of the server and same port number used in server.
 
